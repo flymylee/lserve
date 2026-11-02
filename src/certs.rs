@@ -39,6 +39,67 @@ pub struct CertificatePaths {
 const ANDROID_TERMUX_HOME: &str = "/data/data/com.termux/files/home";
 const ANDROID_ROOT_FALLBACK: &str = "/data/local/tmp/lserve";
 
+/// Runtime OS detection so a single static `*-linux-musl` binary can move
+/// between Android (Termux / rooted shell) and standard Linux servers (e.g.
+/// Ubuntu, RHEL, Oracle A1 aarch64) while still applying platform-appropriate
+/// paths and privilege rules.
+pub fn is_android_runtime() -> bool {
+    cfg!(target_os = "android")
+        || env::var_os("ANDROID_ROOT").is_some()
+        || env::var_os("TERMUX_VERSION").is_some()
+        || env::var_os("TERMUX__HOME").is_some()
+        || Path::new("/system/build.prop").exists()
+        || Path::new(ANDROID_TERMUX_HOME).exists()
+}
+
+pub fn is_effective_root() -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::geteuid() == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+pub fn has_cap_net_bind_service() -> bool {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        if let Ok(status) = fs::read_to_string("/proc/self/status") {
+            for line in status.lines() {
+                if let Some(hex) = line.strip_prefix("CapEff:")
+                    && let Ok(mask) = u64::from_str_radix(hex.trim(), 16)
+                {
+                    // CAP_NET_BIND_SERVICE is bit 10 in Linux/Android capabilities.
+                    return (mask & (1u64 << 10)) != 0;
+                }
+            }
+        }
+        false
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        is_effective_root()
+    }
+}
+
+/// Determines whether the current process should default to privileged ports
+/// (80/443) or unprivileged ports (8080/8443).
+///
+/// - On Android, restricted root profiles or shell contexts may have EUID 0
+///   without `CAP_NET_BIND_SERVICE` (or vice versa), so both EUID 0 and
+///   `CAP_NET_BIND_SERVICE` are required.
+/// - On standard Linux (PC/server), either root (`EUID == 0`) or a binary with
+///   `setcap 'cap_net_bind_service=+ep'` (`CAP_NET_BIND_SERVICE`) qualifies.
+pub fn can_use_privileged_ports() -> bool {
+    if is_android_runtime() {
+        is_effective_root() && has_cap_net_bind_service()
+    } else {
+        is_effective_root() || has_cap_net_bind_service()
+    }
+}
+
 pub fn data_dir() -> Result<PathBuf> {
     if is_android_root() {
         // Non-certificate global assets (for example custom syntax grammars)
@@ -49,6 +110,10 @@ pub fn data_dir() -> Result<PathBuf> {
         {
             return Ok(home.join(".local/share/lserve"));
         }
+    } else if is_effective_root()
+        && let Some((sudo_home, _, _)) = sudo_user_identity()
+    {
+        return Ok(sudo_home.join(".local/share/lserve"));
     }
     let home = env::var_os("HOME").context("HOME is not set")?;
     Ok(PathBuf::from(home).join(".local/share/lserve"))
@@ -63,19 +128,18 @@ fn certificate_data_dir() -> Result<PathBuf> {
 }
 
 fn is_android_root() -> bool {
-    cfg!(target_os = "android") && unsafe { libc::geteuid() == 0 }
+    is_android_runtime() && is_effective_root()
 }
 
 fn android_root_data_dir() -> Result<PathBuf> {
     let mut incomplete = Vec::new();
     for home in termux_home_candidates() {
-        for candidate in termux_store_candidates(&home) {
-            if has_complete_ca(&candidate) {
-                return Ok(candidate);
-            }
-            if has_any_cert_material(&candidate) {
-                incomplete.push(candidate);
-            }
+        let candidate = home.join(".local/share/lserve");
+        if has_complete_ca(&candidate) {
+            return Ok(candidate);
+        }
+        if has_any_cert_material(&candidate) {
+            incomplete.push(candidate);
         }
     }
 
@@ -102,11 +166,37 @@ fn termux_home_candidates() -> Vec<PathBuf> {
     homes
 }
 
-fn termux_store_candidates(home: &Path) -> Vec<PathBuf> {
-    // `.local/lserve` is the rooted-Android preferred location. The historical
-    // `.local/share/lserve` location is also checked so an existing Termux CA
-    // can be reused instead of silently creating a second trust root.
-    vec![home.join(".local/lserve"), home.join(".local/share/lserve")]
+#[cfg(unix)]
+fn sudo_user_identity() -> Option<(PathBuf, u32, u32)> {
+    let user = env::var("SUDO_USER").ok()?;
+    if user.is_empty() || user == "root" {
+        return None;
+    }
+    let uid: u32 = env::var("SUDO_UID").ok()?.parse().ok()?;
+    let gid: u32 = env::var("SUDO_GID").ok()?.parse().ok()?;
+    if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
+        for line in passwd.lines() {
+            let mut parts = line.split(':');
+            let name = parts.next()?;
+            let _pw = parts.next()?;
+            let pw_uid = parts.next()?.parse::<u32>().ok()?;
+            let _pw_gid = parts.next()?;
+            let _gecos = parts.next()?;
+            let home = parts.next()?;
+            if (name == user || pw_uid == uid) && !home.is_empty() {
+                let home_path = PathBuf::from(home);
+                if home_path.is_dir() {
+                    return Some((home_path, uid, gid));
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(unix))]
+fn sudo_user_identity() -> Option<(PathBuf, u32, u32)> {
+    None
 }
 
 fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
@@ -481,24 +571,31 @@ fn prepare_certificate_dir(path: &Path) -> Result<()> {
 }
 
 fn apply_android_root_ownership(path: &Path) -> Result<()> {
-    if !is_android_root() {
+    if is_android_root() {
+        if path.starts_with(Path::new(ANDROID_ROOT_FALLBACK)) {
+            return chown_path(path, 0, 0);
+        }
+
+        for home in termux_home_candidates() {
+            if path.starts_with(&home) {
+                let metadata = fs::metadata(&home)
+                    .with_context(|| format!("failed to inspect Termux home {}", home.display()))?;
+                #[cfg(unix)]
+                return chown_path(path, metadata.uid(), metadata.gid());
+                #[cfg(not(unix))]
+                return Ok(());
+            }
+        }
         return Ok(());
     }
 
-    if path.starts_with(Path::new(ANDROID_ROOT_FALLBACK)) {
-        return chown_path(path, 0, 0);
+    if is_effective_root()
+        && let Some((sudo_home, uid, gid)) = sudo_user_identity()
+        && path.starts_with(&sudo_home)
+    {
+        return chown_path(path, uid, gid);
     }
 
-    for home in termux_home_candidates() {
-        if path.starts_with(&home) {
-            let metadata = fs::metadata(&home)
-                .with_context(|| format!("failed to inspect Termux home {}", home.display()))?;
-            #[cfg(unix)]
-            return chown_path(path, metadata.uid(), metadata.gid());
-            #[cfg(not(unix))]
-            return Ok(());
-        }
-    }
     Ok(())
 }
 

@@ -22,8 +22,8 @@ The current directory is used when no path is supplied. The path is canonicalize
 | `.lserve` key | CLI equivalent | Default | Meaning |
 | --- | --- | --- | --- |
 | `bind=ADDRESS` | `--bind ADDRESS` | `127.0.0.1` | Loopback/private/shared bind only |
-| `http-port=PORT` | `--http-port PORT` | `8080` | Redirect/origin HTTP port |
-| `https-port=PORT` | `--https-port PORT`, `-p PORT` | `8443` | HTTPS port |
+| `http-port=PORT` | `--http-port PORT` | `80` (privileged) / `8080` | Redirect/origin HTTP port |
+| `https-port=PORT` | `--https-port PORT`, `-p PORT` | `443` (privileged) / `8443` | HTTPS port |
 | `http-only=true` | `--http-only` | `false` | Serve HTTP directly instead of redirecting to HTTPS |
 | `symlinks=false` | `--no-symlinks` | `true` | Disable following symbolic links |
 | `markdown=false` | `--no-markdown` | `true` | Serve Markdown as raw files |

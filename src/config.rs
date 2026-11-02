@@ -8,8 +8,18 @@ use std::{
 
 pub const DEFAULT_HTTP_PORT: u16 = 8080;
 pub const DEFAULT_HTTPS_PORT: u16 = 8443;
+pub const PRIVILEGED_HTTP_PORT: u16 = 80;
+pub const PRIVILEGED_HTTPS_PORT: u16 = 443;
 pub const DEFAULT_LOG_MAX_SIZE: u64 = 1024 * 1024;
 pub const DEFAULT_LOG_GENERATIONS: usize = 5;
+
+pub fn default_ports() -> (u16, u16) {
+    if crate::certs::can_use_privileged_ports() {
+        (PRIVILEGED_HTTP_PORT, PRIVILEGED_HTTPS_PORT)
+    } else {
+        (DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkdownTheme {
@@ -248,19 +258,20 @@ fn resolve_serve(cli: ServeCli) -> Result<Config> {
         .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
     validate_bind(bind)?;
 
-    // Ports are intentionally independent of privilege level. Root-like Android
-    // environments (for example shell/Shizuku contexts) do not consistently gain
-    // privileged-port capability, so stable 8080/8443 defaults are less surprising.
+    // Privileged ports (80/443) are selected automatically when the process
+    // has sufficient privilege (root or CAP_NET_BIND_SERVICE on Linux, and
+    // both root + CAP_NET_BIND_SERVICE on Android). Otherwise 8080/8443 are used.
+    let (default_http, default_https) = default_ports();
     let http_port = cli
         .raw
         .http_port
         .or(file_cfg.http_port)
-        .unwrap_or(DEFAULT_HTTP_PORT);
+        .unwrap_or(default_http);
     let https_port = cli
         .raw
         .https_port
         .or(file_cfg.https_port)
-        .unwrap_or(DEFAULT_HTTPS_PORT);
+        .unwrap_or(default_https);
     let http_only = cli.raw.http_only.or(file_cfg.http_only).unwrap_or(false);
     if !http_only && http_port == https_port {
         bail!("HTTP and HTTPS ports must differ unless --http-only is used");
@@ -636,7 +647,9 @@ pub const EXAMPLE_CONFIG: &str = r#"# lserve configuration
 # bind=127.0.0.1
 
 # Ports.
-# Default on Android and Linux, root or non-root: HTTP 8080, HTTPS 8443.
+# Default: HTTP 80 / HTTPS 443 when running with root/CAP_NET_BIND_SERVICE
+# capability (on Android, both root and CAP_NET_BIND_SERVICE are required);
+# otherwise HTTP 8080 / HTTPS 8443.
 #
 # http-port=8080
 # https-port=8443
@@ -689,7 +702,7 @@ pub const EXAMPLE_CONFIG: &str = r#"# lserve configuration
 # route.admin.local.example.com=http://localhost:3001
 "#;
 
-pub const HELP: &str = r#"lserve 1.0.0
+pub const HELP: &str = r#"lserve 1.0.1
 A lightweight local/private HTTPS static server, Markdown viewer, and Host/path-based reverse proxy.
 
 USAGE:
@@ -702,8 +715,8 @@ USAGE:
 
 SERVE OPTIONS:
   --bind ADDRESS             Bind to loopback/private address only (default 127.0.0.1)
-  --http-port PORT           HTTP redirect/origin port (default 8080)
-  --https-port PORT          HTTPS port (default 8443)
+  --http-port PORT           HTTP redirect/origin port (default 80 if privileged, else 8080)
+  --https-port PORT          HTTPS port (default 443 if privileged, else 8443)
   -p PORT                    Alias for --https-port
   --http-only                Serve directly over HTTP
   --no-symlinks              Do not follow symlinks

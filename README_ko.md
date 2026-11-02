@@ -52,14 +52,19 @@ cd ~/my-site
 lserve
 ```
 
-Android/Linux, root/non-root 구분 없이 기본 포트는 동일합니다.
+기본 포트는 실행 권한(`root` 또는 `CAP_NET_BIND_SERVICE`)에 따라 자동으로 선택됩니다.
 
 ```text
-http://localhost:8080  ->  https://localhost:8443
-https://localhost:8443
+일반 실행:
+  http://localhost:8080  ->  https://localhost:8443
+  https://localhost:8443
+
+권한 보유 시 (Linux: root 또는 setcap / Android: root + CAP_NET_BIND_SERVICE):
+  http://localhost:80    ->  https://localhost:443
+  https://localhost
 ```
 
-80/443 등이 필요하면 `--http-port` / `--https-port`로 명시합니다.
+포트를 직접 지정하려면 `--http-port` / `--https-port`로 명시합니다.
 
 최초 HTTPS 실행 시 일반적으로 다음 위치에 기기 전용 CA/서버 인증서를 만듭니다.
 
@@ -73,7 +78,7 @@ https://localhost:8443
 
 **`rootCA-key.pem`은 절대로 공유하지 마세요.**
 
-**루팅 Android에서 EUID 0으로 실행**하면 먼저 `$TERMUX__HOME/.local/lserve/`의 완전한 기존 CA를 찾고, 호환을 위해 기존 `.local/share/lserve/`도 확인합니다. 사용할 기존 CA가 없으면 `/data/local/tmp/lserve/`를 사용하며 fallback 디렉터리는 `0:0`, mode `0700`으로 관리합니다. 자세한 내용은 [docs/CERTIFICATES.md](docs/CERTIFICATES.md)를 참고하세요.
+**루팅 Android에서 EUID 0으로 실행**하면 먼저 `$TERMUX__HOME/.local/share/lserve/`(또는 `/data/data/com.termux/files/home/.local/share/lserve/`)의 완전한 기존 CA를 찾습니다. 사용할 기존 CA가 없으면 `/data/local/tmp/lserve/`를 사용하며 fallback 디렉터리는 `0:0`, mode `0700`으로 관리합니다. 자세한 내용은 [docs/CERTIFICATES.md](docs/CERTIFICATES.md)를 참고하세요.
 
 ### 4. Root CA 신뢰 등록
 
@@ -101,7 +106,7 @@ OS/브라우저의 인증서 설정에서 export한 파일을 **CA 인증서**�
 
 - document root = 현재 디렉터리
 - bind = `127.0.0.1`
-- Android/Linux, root/non-root 공통 기본 포트 = `8080/8443`
+- 기본 포트 = 권한 보유 시 `80/443`, 일반 실행 시 `8080/8443`
 - HTTP -> HTTPS `308` redirect
 - static method = `GET`, `HEAD`, `OPTIONS`
 - static CORS 기본 open

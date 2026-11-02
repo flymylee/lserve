@@ -14,11 +14,10 @@ On Linux and non-root Android/Termux, the existing location remains:
 └── localhost-key.pem
 ```
 
-On rooted Android (`target_os=android` and EUID 0), `lserve` does **not** trust the root shell's `$HOME`. It first checks the Termux home from `$TERMUX__HOME`, then `/data/data/com.termux/files/home`, looking for a complete existing CA in:
+On rooted Android (detected at runtime with EUID 0), `lserve` does **not** trust the root shell's `$HOME`. It first checks the Termux home from `$TERMUX__HOME`, then `/data/data/com.termux/files/home`, looking for a complete existing CA in:
 
 ```text
-.local/lserve/
-.local/share/lserve/    # compatibility with earlier lserve runs
+.local/share/lserve/
 ```
 
 If no complete Termux CA pair exists, global certificate state falls back to:
@@ -27,7 +26,7 @@ If no complete Termux CA pair exists, global certificate state falls back to:
 /data/local/tmp/lserve/
 ```
 
-The fallback directory is owned by `0:0` and protected with mode `0700`; private keys are mode `0600`. When rooted Android writes certificate files under the Termux home, ownership is set back to the actual UID/GID of the Termux home directory rather than hard-coding Android shell UID 2000.
+The fallback directory is owned by `0:0` and protected with mode `0700`; private keys are mode `0600`. When rooted Android writes certificate files under the Termux home, ownership is set back to the actual UID/GID of the Termux home directory rather than hard-coding Android shell UID 2000. On standard Linux, running under `sudo` preserves the invoking user's `~/.local/share/lserve/` directory and file ownership (`SUDO_USER`/`SUDO_UID`/`SUDO_GID`).
 
 `rootCA-key.pem` is private. Never distribute it.
 

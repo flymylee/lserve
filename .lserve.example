@@ -11,7 +11,9 @@
 # bind=127.0.0.1
 
 # Ports.
-# Default on Android and Linux, root or non-root: HTTP 8080, HTTPS 8443.
+# Default: HTTP 80 / HTTPS 443 when running with root/CAP_NET_BIND_SERVICE
+# capability (on Android, both root and CAP_NET_BIND_SERVICE are required);
+# otherwise HTTP 8080 / HTTPS 8443.
 #
 # http-port=8080
 # https-port=8443

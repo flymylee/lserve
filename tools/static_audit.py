@@ -26,8 +26,8 @@ with cargo_path.open("rb") as f:
 package = cargo.get("package", {})
 if package.get("name") != "lserve":
     fail("Cargo package name is not lserve")
-if package.get("version") != "1.0.0":
-    fail("Cargo package version is not 1.0.0")
+if package.get("version") != "1.0.1":
+    fail("Cargo package version is not 1.0.1")
 if package.get("rust-version") != "1.88":
     fail("Cargo rust-version is not 1.88")
 
@@ -157,13 +157,13 @@ for path in ROOT.rglob("*"):
         if "FIXME" in text or "TODO" in text:
             fail(f"TODO/FIXME remains in {rel}")
 
-# Targeted regressions found during the v1.0.0 reconstruction.
+# Targeted regressions found during the v1.0.0/v1.0.1 reconstruction.
 if config_source.count("let file_cfg = read_project_config(&root)?;") != 1:
     fail("document-root config should be read exactly once in resolve_serve")
 if "pub const DEFAULT_HTTP_PORT: u16 = 8080;" not in config_source or "pub const DEFAULT_HTTPS_PORT: u16 = 8443;" not in config_source:
-    fail("default ports must remain privilege-independent 8080/8443")
-if "if is_root { 80 } else { 8080 }" in config_source or "if is_root { 443 } else { 8443 }" in config_source:
-    fail("privilege-dependent default ports reappeared")
+    fail("unprivileged default ports 8080/8443 constants are missing")
+if "pub const PRIVILEGED_HTTP_PORT: u16 = 80;" not in config_source or "pub const PRIVILEGED_HTTPS_PORT: u16 = 443;" not in config_source:
+    fail("privileged default ports 80/443 constants are missing")
 if 'cmd == "export"' not in config_source or '--export PATH' in config_source:
     fail("canonical CA export syntax must remain `ca export PATH`")
 if 'what == "all"' not in config_source:
@@ -178,8 +178,8 @@ if "path_prefix_matches" not in proxy or "max_by_key" not in proxy:
 certs = (ROOT / "src/certs.rs").read_text(encoding="utf-8")
 if 'const ANDROID_ROOT_FALLBACK: &str = "/data/local/tmp/lserve";' not in certs:
     fail("rooted-Android certificate fallback path is missing")
-if 'home.join(".local/lserve")' not in certs or 'home.join(".local/share/lserve")' not in certs:
-    fail("rooted-Android Termux certificate-store compatibility search is missing")
+if 'home.join(".local/share/lserve")' not in certs or ".local/lserve" in certs:
+    fail("certificate store path must be unified to .local/share/lserve")
 completions = (ROOT / "src/completions.rs").read_text(encoding="utf-8")
 bash_match = re.search(r'const BASH: &str = r#"(.*?)"#;', completions, re.S)
 bash_completion = bash_match.group(1) if bash_match else ""

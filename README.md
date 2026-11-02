@@ -50,11 +50,16 @@ cd ~/my-site
 lserve
 ```
 
-The default ports are the same on Android/Linux and for root/non-root execution:
+The default ports depend on whether the process can bind privileged ports:
 
 ```text
-http://localhost:8080  ->  https://localhost:8443
-https://localhost:8443
+Unprivileged default:
+  http://localhost:8080  ->  https://localhost:8443
+  https://localhost:8443
+
+Privileged default (root or CAP_NET_BIND_SERVICE on Linux; root + CAP_NET_BIND_SERVICE on Android):
+  http://localhost:80    ->  https://localhost:443
+  https://localhost
 ```
 
 Use `--http-port` / `--https-port` explicitly if you intentionally want different ports.
@@ -71,7 +76,7 @@ The first HTTPS run normally creates a device-local CA and server certificate un
 
 **Never share `rootCA-key.pem`.**
 
-On **rooted Android**, `lserve` first looks for an existing complete Termux CA in `$TERMUX__HOME/.local/lserve/` (and the historical `.local/share/lserve/` location). If none exists, global certificates are stored in `/data/local/tmp/lserve/`, owned by `0:0`; that fallback directory is mode `0700`. See [docs/CERTIFICATES.md](docs/CERTIFICATES.md).
+On **rooted Android**, `lserve` first looks for an existing complete Termux CA in `$TERMUX__HOME/.local/share/lserve/` (or `/data/data/com.termux/files/home/.local/share/lserve/`). If none exists, global certificates are stored in `/data/local/tmp/lserve/`, owned by `0:0`; that fallback directory is mode `0700`. See [docs/CERTIFICATES.md](docs/CERTIFICATES.md).
 
 ### 4. Trust the local CA
 
@@ -99,7 +104,7 @@ Install the exported file as a **CA certificate** using your OS/browser trust co
 
 - document root = current directory
 - bind = `127.0.0.1`
-- default ports = `8080` / `8443` on Android/Linux, root or non-root
+- default ports = `80` / `443` when privileged (`root` / `CAP_NET_BIND_SERVICE`), otherwise `8080` / `8443`
 - HTTP -> HTTPS `308` redirect
 - static methods = `GET`, `HEAD`, `OPTIONS`
 - open CORS for static responses
