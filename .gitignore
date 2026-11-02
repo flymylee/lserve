@@ -1,0 +1,19 @@
+# Rust build artifacts
+/target/
+
+# Local runtime state & certificates
+.lserve
+.certs/
+.syntaxes/
+*.log
+*.log.*
+*.pem
+*.crt
+
+# Local worklogs & editor directories
+/.worklog
+/.worklog/
+/.cursor/
+/.vscode/
+/.idea/
+.DS_Store

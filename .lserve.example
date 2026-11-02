@@ -1,0 +1,64 @@
+# lserve configuration
+#
+# CLI options always override values in this file.
+# This file is read only from the selected document root.
+
+# Bind address.
+# Default: 127.0.0.1
+# Only loopback/private/shared addresses are accepted.
+# Public and wildcard addresses are rejected.
+#
+# bind=127.0.0.1
+
+# Ports.
+# Default on Android and Linux, root or non-root: HTTP 8080, HTTPS 8443.
+#
+# http-port=8080
+# https-port=8443
+
+# Serve HTTP directly instead of redirecting to HTTPS.
+# Useful behind Cloudflare Tunnel or another access layer.
+#
+# http-only=false
+
+# Follow symbolic links.
+# Default: true
+#
+# symlinks=true
+
+# Render .md files as HTML. Add ?raw to retrieve original Markdown.
+# Default: true
+#
+# markdown=true
+
+# Markdown theme: auto, light, dark
+# Default: auto
+#
+# markdown-theme=auto
+
+# Optional file logs. Console logging remains enabled.
+# Relative paths are resolved from the document root.
+#
+# access-log=./logs/access.log
+# error-log=./logs/error.log
+
+# Default: 1M
+# log-max-size=1M
+
+# Default: 5
+# log-generations=5
+
+# Add limited internal details to 5xx responses.
+# Default: false
+#
+# verbose-errors=false
+
+# Host/path-based reverse proxy.
+# Upstream scheme must be http. The actual destination selected for a
+# connection must resolve to loopback, even when a custom hostname is used.
+# A path prefix is optional; the longest matching path prefix wins and is
+# forwarded unchanged to the upstream.
+#
+# route.local.example.com=http://127.0.0.1:3000
+# route.local.example.com/api=http://127.0.0.1:4000
+# route.admin.local.example.com=http://localhost:3001
