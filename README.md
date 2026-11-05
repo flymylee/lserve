@@ -2,6 +2,8 @@
 
 **A lightweight local/private HTTPS static server, Markdown viewer, and Host/path-based reverse proxy for local applications.**
 
+One static musl binary. The same aarch64 file runs on Linux servers and on Android/Termux.
+
 `lserve` is deliberately small in scope: it serves local/private content well, terminates local TLS, and can route selected hostnames to HTTP applications running on the same machine. Authentication, public exposure, SSO, rate limiting, high availability, and large-scale production concerns belong in a separate layer.
 
 > **Default safety boundary:** `lserve` binds to `127.0.0.1`. An explicit `--bind` may use only loopback/private/shared address ranges. Public and wildcard binds such as `0.0.0.0` are rejected.
@@ -10,40 +12,19 @@
 
 ## Getting Started
 
-### 1. Install Rust
-
-`lserve` v1.0.0 targets Rust **1.88+**.
-
-Termux:
+### 1. Install
 
 ```sh
-pkg install rust
+curl -fsSL https://raw.githubusercontent.com/flymylee/lserve/main/install.sh | bash
 ```
 
-Ubuntu (distribution package or rustup):
+The script installs the latest Linux musl release for this machine (`x86_64` or `aarch64`). Android and Termux use that same file. `~/.local/bin` must be on `PATH`. On Termux the script installs into `$PREFIX/bin`.
 
-```sh
-sudo apt install cargo rustc
-```
+Windows and macOS builds are not published yet.
 
-RHEL-family systems may use the distribution Rust packages or rustup. Check the version with:
+To download an archive yourself, open the [latest release](https://github.com/flymylee/lserve/releases/latest). The published files are `lserve-v*-x86_64-linux-musl.tar.gz` and `lserve-v*-aarch64-linux-musl.tar.gz`, plus `SHA256SUMS`.
 
-```sh
-rustc --version
-```
-
-### 2. Build and install
-
-```sh
-git clone https://github.com/flymylee/lserve.git
-cd lserve
-cargo build --release
-install -Dm755 target/release/lserve ~/.local/bin/lserve
-```
-
-Ensure `~/.local/bin` is in `PATH`.
-
-### 3. Serve a directory
+### 2. Serve a directory
 
 ```sh
 cd ~/my-site
@@ -78,7 +59,7 @@ The first HTTPS run normally creates a device-local CA and server certificate un
 
 On **rooted Android**, `lserve` first looks for an existing complete Termux CA in `$TERMUX__HOME/.local/share/lserve/` (or `/data/data/com.termux/files/home/.local/share/lserve/`). If none exists, global certificates are stored in `/data/local/tmp/lserve/`, owned by `0:0`; that fallback directory is mode `0700`. See [docs/CERTIFICATES.md](docs/CERTIFICATES.md).
 
-### 4. Trust the local CA
+### 3. Trust the local CA
 
 Show its path:
 
@@ -307,9 +288,32 @@ See [docs/SECURITY.md](docs/SECURITY.md).
 - [Logging](docs/LOGGING.md)
 - [Changelog](CHANGELOG.md)
 
-## Build verification note
+## Build from source
 
-The v1.0.0 source reconstruction was written against current Hyper/rustls/rcgen/Comrak/syntect APIs. Before publishing a release, run:
+Building from source needs Rust **1.88+**.
+
+Termux:
+
+```sh
+pkg install rust
+```
+
+Ubuntu (distribution package or rustup):
+
+```sh
+sudo apt install cargo rustc
+```
+
+RHEL-family systems may use the distribution Rust packages or rustup. Check the version with `rustc --version`.
+
+```sh
+git clone https://github.com/flymylee/lserve.git
+cd lserve
+cargo build --release
+install -Dm755 target/release/lserve ~/.local/bin/lserve
+```
+
+Before a release build, run:
 
 ```sh
 cargo fmt --check
@@ -318,7 +322,7 @@ cargo test
 cargo build --release
 ```
 
-and commit the generated `Cargo.lock` for reproducible application builds.
+Commit the generated `Cargo.lock` for reproducible application builds.
 
 ## License
 

@@ -1,72 +1,51 @@
 # lserve
 
-**로컬/사설 환경을 위한 경량 HTTPS 정적 서버 + Markdown 뷰어 + Host/path 기반 reverse proxy**입니다.
+**로컬과 사설망에서 쓰는 가벼운 HTTPS 서버입니다.** 정적 파일과 Markdown을 보여주고, 같은 머신의 HTTP 앱으로 Host/path 리버스 프록시(reverse proxy)를 합니다.
 
-`lserve`가 맡는 역할은 의도적으로 작습니다. 로컬/사설 데이터를 안정적으로 전달하고, 로컬 TLS를 처리하고, 필요하면 같은 머신의 HTTP 애플리케이션으로 Host별 라우팅합니다. 인증, SSO, 사용자 관리, rate limiting, 공개 인터넷 노출, 고가용성 같은 책임은 별도 레이어에 둡니다.
+musl로 만든 정적 바이너리입니다. `x86_64`와 `aarch64`를 각각 제공하고, Android와 Termux도 그 기기에 맞는 Linux 파일을 씁니다.
 
-> **기본 보안 경계:** 기본 bind는 `127.0.0.1`입니다. `--bind`를 명시해도 loopback/사설/shared 주소만 허용하며 `0.0.0.0` 같은 wildcard나 public IP는 거부합니다.
+하는 일을 일부러 좁혀 두었습니다. 로컬 파일을 제공하고, 로컬 TLS를 맡습니다. 리버스 프록시는 같은 머신의 HTTP 앱만 연결합니다. 인증, SSO, 사용자 관리, rate limiting, 인터넷 공개, 고가용성은 다른 쪽이 합니다.
+
+> **기본 보안 경계:** 기본 bind는 `127.0.0.1`입니다. `--bind`를 주어도 loopback, 사설망, shared(`100.64.0.0/10`) 주소만 허용합니다. `0.0.0.0` 같은 wildcard나 공인 IP는 거부합니다.
 
 [English README](README.md)
 
-## Getting Started
+## 시작하기
 
-### 1. Rust 설치
-
-`lserve` v1.0.0의 기준 Rust는 **1.88+**입니다.
-
-Termux:
+### 1. 설치
 
 ```sh
-pkg install rust
+curl -fsSL https://raw.githubusercontent.com/flymylee/lserve/main/install.sh | bash
 ```
 
-Ubuntu:
+이 스크립트는 이 기기에 맞는 최신 Linux musl 릴리스(`x86_64` 또는 `aarch64`)를 설치합니다. Android와 Termux도 그 기기에 맞는 같은 Linux 파일을 씁니다. `~/.local/bin`이 `PATH`에 있어야 합니다. Termux에서는 `$PREFIX/bin`에 설치합니다.
 
-```sh
-sudo apt install cargo rustc
-```
+Windows와 macOS 빌드는 아직 없습니다.
 
-RHEL 계열에서는 배포판 Rust 패키지 또는 rustup을 사용할 수 있습니다.
+압축 파일을 직접 받으려면 [최신 릴리스](https://github.com/flymylee/lserve/releases/latest)를 엽니다. 있는 파일은 `lserve-v*-x86_64-linux-musl.tar.gz`, `lserve-v*-aarch64-linux-musl.tar.gz`, `SHA256SUMS`입니다.
 
-```sh
-rustc --version
-```
-
-으로 버전을 확인합니다.
-
-### 2. 빌드 및 설치
-
-```sh
-git clone https://github.com/flymylee/lserve.git
-cd lserve
-cargo build --release
-install -Dm755 target/release/lserve ~/.local/bin/lserve
-```
-
-`~/.local/bin`이 `PATH`에 포함되어 있어야 합니다.
-
-### 3. 현재 디렉터리 서빙
+### 2. 현재 디렉터리 열기
 
 ```sh
 cd ~/my-site
 lserve
 ```
 
-기본 포트는 실행 권한(`root` 또는 `CAP_NET_BIND_SERVICE`)에 따라 자동으로 선택됩니다.
+기본 포트는 특권 포트를 열 수 있는지에 따라 달라집니다.
 
 ```text
 일반 실행:
   http://localhost:8080  ->  https://localhost:8443
   https://localhost:8443
 
-권한 보유 시 (Linux: root 또는 setcap / Android: root + CAP_NET_BIND_SERVICE):
+특권 포트가 가능할 때 (Linux: root 또는 setcap / Android: root + CAP_NET_BIND_SERVICE):
   http://localhost:80    ->  https://localhost:443
   https://localhost
 ```
 
-포트를 직접 지정하려면 `--http-port` / `--https-port`로 명시합니다.
+다른 포트를 쓰려면 `--http-port`와 `--https-port`를 줍니다.
 
-최초 HTTPS 실행 시 일반적으로 다음 위치에 기기 전용 CA/서버 인증서를 만듭니다.
+HTTPS를 처음 실행하면 이 기기에서만 쓰는 CA와 서버 인증서를 보통 다음 위치에 만듭니다.
 
 ```text
 ~/.local/share/lserve/
@@ -78,66 +57,66 @@ lserve
 
 **`rootCA-key.pem`은 절대로 공유하지 마세요.**
 
-**루팅 Android에서 EUID 0으로 실행**하면 먼저 `$TERMUX__HOME/.local/share/lserve/`(또는 `/data/data/com.termux/files/home/.local/share/lserve/`)의 완전한 기존 CA를 찾습니다. 사용할 기존 CA가 없으면 `/data/local/tmp/lserve/`를 사용하며 fallback 디렉터리는 `0:0`, mode `0700`으로 관리합니다. 자세한 내용은 [docs/CERTIFICATES.md](docs/CERTIFICATES.md)를 참고하세요.
+**루팅 Android에서 EUID 0으로 실행**하면 `$TERMUX__HOME/.local/share/lserve/`(또는 `/data/data/com.termux/files/home/.local/share/lserve/`)에서 CA 파일과 키가 모두 있는 기존 CA를 먼저 찾습니다. 없으면 `/data/local/tmp/lserve/`를 쓰고, 그 디렉터리는 소유자 `0:0`, 모드 `0700`입니다. 자세한 내용은 [docs/CERTIFICATES.md](docs/CERTIFICATES.md)를 참고하세요.
 
-### 4. Root CA 신뢰 등록
+### 3. 로컬 CA 신뢰
 
-경로 확인:
+경로 보기:
 
 ```sh
 lserve ca
 ```
 
-공개 CA 인증서만 export:
+공개 CA 인증서만 내보내기:
 
 ```sh
 lserve ca export ~/Downloads/lserve-rootCA.crt
 ```
 
-Android/Termux라면 예를 들어:
+Android/Termux에서는 예를 들어 이렇게 둡니다.
 
 ```sh
 lserve ca export ~/storage/downloads/lserve-rootCA.crt
 ```
 
-OS/브라우저의 인증서 설정에서 export한 파일을 **CA 인증서**로 등록합니다. `rootCA-key.pem`은 복사하거나 설치하지 않습니다.
+OS나 브라우저의 인증서 설정에서 내보낸 파일을 **CA 인증서**로 등록합니다. `rootCA-key.pem`은 복사하거나 설치하지 않습니다.
 
 ## 기본 동작
 
-- document root = 현재 디렉터리
-- bind = `127.0.0.1`
-- 기본 포트 = 권한 보유 시 `80/443`, 일반 실행 시 `8080/8443`
-- HTTP -> HTTPS `308` redirect
-- static method = `GET`, `HEAD`, `OPTIONS`
-- static CORS 기본 open
-- `index.html` 지원, **directory listing 없음**
-- path traversal 차단
-- symlink 기본 허용, `--no-symlinks`로 opt-out
-- `.lserve`, `.certs/`, `.syntaxes/`, 설정된 log 파일은 HTTP 차단
-- Markdown 자동 렌더링, `?raw`로 원문
-- 서버사이드 syntax highlighting + light/dark
-- 동영상/대용량 파일용 single Range streaming
-- console access/error log
-- 선택적 file log + timestamp rotation
-- 선택적 Host/path 기반 reverse proxy
-- proxy upstream은 같은 머신의 loopback HTTP만 허용
-- SSE/streaming/WebSocket Upgrade 지원
+- 문서 루트는 현재 디렉터리
+- bind는 `127.0.0.1`
+- 특권 포트를 열 수 있으면 `80`/`443`, 아니면 `8080`/`8443`
+- HTTP는 HTTPS로 `308` 리다이렉트
+- 정적 파일 메서드는 `GET`, `HEAD`, `OPTIONS`
+- 정적 응답의 CORS는 열어 둠
+- `index.html`은 찾고, 디렉터리 목록은 없음
+- 경로 탈출은 막음
+- 심볼릭 링크는 기본으로 따라가고, `--no-symlinks`로 끔
+- `.lserve`, `.certs/`, `.syntaxes/`, 설정한 로그 파일은 HTTP로 주지 않음
+- Markdown은 자동으로 그리고, `?raw`이면 원문
+- 서버에서 구문 강조, 라이트/다크
+- 영상과 큰 파일은 Range 요청 한 구간을 스트리밍
+- 콘솔에 access/error 로그
+- 파일 로그와 시각이 붙은 로테이션은 선택
+- Host/path 리버스 프록시는 선택
+- 리버스 프록시의 upstream은 같은 머신의 loopback HTTP만
+- SSE, 스트리밍, WebSocket Upgrade
 
 ## Markdown
+
+아래 주소를 열면 서버가 HTML로 그립니다.
 
 ```text
 https://localhost:8443/README.md
 ```
 
-를 열면 서버에서 HTML로 렌더링합니다.
-
-원본 Markdown:
+원문은 이렇게 받습니다.
 
 ```text
 https://localhost:8443/README.md?raw
 ```
 
-raw HTML은 기본 비활성입니다. fenced code는 서버에서 언어별 syntax highlighting을 수행합니다. 코드 폰트는 로컬에 설치된 **D2Coding**을 우선하고, 없으면 일반 monospace fallback을 사용합니다. 이 소스 패키지는 D2Coding 폰트 바이너리를 재배포하지 않습니다.
+raw HTML은 기본적으로 꺼져 있습니다. 코드 블록은 언어에 맞춰 서버에서 구문 강조를 합니다. 코드 글꼴은 설치되어 있으면 **D2Coding**을 쓰고, 없으면 일반 고정폭 글꼴을 씁니다. 이 저장소에는 D2Coding 글꼴 파일이 들어 있지 않습니다.
 
 Markdown 렌더링을 끄려면:
 
@@ -147,9 +126,9 @@ lserve --no-markdown
 
 자세한 내용은 [docs/MARKDOWN.md](docs/MARKDOWN.md)를 참고하세요.
 
-## Host 기반 reverse proxy
+## Host/path 리버스 프록시
 
-`.lserve`:
+`.lserve` 예:
 
 ```ini
 route.local.example.com=http://127.0.0.1:3000
@@ -158,7 +137,7 @@ route.local.example.com/api/admin=http://127.0.0.1:5000
 route.admin.local.example.com=http://localhost:3001
 ```
 
-route key는 Host만 쓰거나 `HOST/PATH`로 쓸 수 있습니다. path는 segment boundary 기준 prefix matching을 하며 가장 긴 prefix가 우선하고, upstream에는 원래 path를 그대로 전달합니다.
+라우트 키는 Host만 적어도 되고, `HOST/PATH`처럼 경로를 붙여도 됩니다. 경로는 `/`로 나뉜 구간 단위로 비교하고, 가장 길게 맞는 prefix를 고릅니다. 원래 경로는 그대로 upstream에 넘깁니다.
 
 `hosts` 예:
 
@@ -174,26 +153,24 @@ https://local.example.com/              -> http://127.0.0.1:3000/...
 https://local.example.com/api/users     -> http://127.0.0.1:4000/api/users
 https://local.example.com/api/admin/x   -> http://127.0.0.1:5000/api/admin/x
 https://admin.local.example.com/        -> http://localhost:3001/...
-https://localhost                       -> static fallback
+https://localhost                       -> 정적 파일
 ```
 
-upstream hostname 자체는 사용자 정의 이름이어도 되지만 **실제 연결 직전에 resolve한 목적지 IP가 loopback이어야 합니다.** LAN/원격/인터넷 upstream은 지원하지 않습니다.
+upstream 호스트 이름은 직접 정해도 됩니다. 다만 **실제로 접속하는 주소는 loopback이어야 합니다.** LAN, 원격, 인터넷 주소로는 리버스 프록시를 하지 않습니다.
 
 자세한 내용: [docs/PROXY.md](docs/PROXY.md)
 
 ## 사설망 bind
 
-기본값은 계속 localhost입니다. 필요한 경우에만:
+기본 주소는 localhost입니다. 사설망 주소가 필요할 때만 이렇게 지정합니다.
 
 ```sh
 lserve --bind 100.100.10.20
 ```
 
-처럼 명시합니다.
+쓸 수 있는 주소는 loopback, RFC1918 IPv4, `100.64.0.0/10`(Tailscale IPv4 포함), IPv6 loopback, IPv6 ULA입니다. 공인 IP, `0.0.0.0`, `::`는 거부합니다.
 
-허용 대상에는 loopback, RFC1918 IPv4, `100.64.0.0/10`(Tailscale IPv4 포함), IPv6 loopback, IPv6 ULA가 포함됩니다. public IP, `0.0.0.0`, `::`는 거부합니다.
-
-사설 범위 밖에서 시험적으로 접근하려면 public bind를 열지 말고 앞단에 Cloudflare Tunnel 또는 별도 Access Proxy를 둡니다.
+사설망 밖에서 잠깐 열어 보려면 공인 주소에 직접 붙이지 말고, 앞에 Cloudflare Tunnel이나 Access Proxy를 둡니다.
 
 ## Cloudflare Tunnel / HTTP-only
 
@@ -202,11 +179,11 @@ lserve --http-only
 cloudflared tunnel --url http://127.0.0.1:8080
 ```
 
-외부 TLS/접근 통제는 tunnel 쪽이 맡고 `lserve`는 local origin으로 남습니다.
+바깥 TLS와 접근 통제는 터널이 맡고, `lserve`는 이 머신 안에서만 응답합니다.
 
-## Static CORS
+## 정적 파일 CORS
 
-정적 응답은 의도적으로 cross-origin read를 허용합니다.
+정적 파일은 다른 출처에서도 읽을 수 있게 열어 둡니다.
 
 ```http
 Access-Control-Allow-Origin: *
@@ -215,7 +192,7 @@ Access-Control-Allow-Headers: *
 Access-Control-Max-Age: 86400
 ```
 
-외부 웹페이지나 bookmarklet에서 localhost resource를 읽는 용도입니다. proxy 응답의 CORS는 upstream 애플리케이션 정책을 그대로 유지합니다.
+브라우저의 다른 페이지나 bookmarklet이 localhost 파일을 가져갈 수 있게 하려는 것입니다. 리버스 프록시 응답의 CORS는 upstream 앱이 보낸 그대로 둡니다.
 
 ## 로그
 
@@ -225,7 +202,7 @@ lserve \
   --error-log ./logs/error.log
 ```
 
-파일 로그를 켜도 console 출력은 유지됩니다. 기본 rotation은 1 MiB / 과거 5세대입니다.
+파일 로그를 켜도 콘솔에는 계속 나옵니다. 파일은 1 MiB마다 자르고, 시각이 붙은 이전 파일을 5개까지 남깁니다.
 
 ```text
 access.log
@@ -233,9 +210,9 @@ access.log.20260924_231500
 access.log.20260923_101122
 ```
 
-로그가 document root 안에 있으면 활성 로그와 인식 가능한 rotation 파일을 HTTP 404 처리합니다.
+로그를 문서 루트 안에 두면, 지금 쓰는 로그와 시각이 붙은 이전 파일은 HTTP에서 404로 숨깁니다.
 
-개발 중 5xx 응답에 제한적인 내부 설명까지 보고 싶다면:
+개발 중 5xx 응답에 내부 설명을 조금 더 보고 싶다면:
 
 ```sh
 lserve --verbose-errors
@@ -245,13 +222,13 @@ lserve --verbose-errors
 
 ## 설정 파일
 
-주석이 포함된 예제 출력:
+주석이 달린 예제를 보려면:
 
 ```sh
 lserve config
 ```
 
-기존 파일을 덮어쓰지 않고 `./.lserve` 생성:
+이미 있는 파일은 덮어쓰지 않고 `./.lserve`를 만듭니다.
 
 ```sh
 lserve config --write
@@ -263,7 +240,7 @@ lserve config --write
 CLI > ./.lserve > 자동 기본값
 ```
 
-선택한 document root의 `.lserve` 하나만 읽고 상위 디렉터리는 탐색하지 않습니다.
+고른 문서 루트의 `.lserve`만 읽습니다. 위쪽 디렉터리는 찾지 않습니다.
 
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)와 [.lserve.example](.lserve.example)을 참고하세요.
 
@@ -280,13 +257,13 @@ lserve flush cert
 lserve flush ca
 ```
 
-project hostname이 필요하면 `./.certs/server.pem` / `server-key.pem`을 사용하며 global Root CA로 서명합니다. SAN은 exact hostname/IP로 구성하고 wildcard SAN은 자동 생성하지 않습니다.
+프로젝트 호스트 이름이 필요하면 `./.certs/server.pem`과 `server-key.pem`을 쓰고, 같은 전역 Root CA로 서명합니다. SAN에는 그 호스트 이름과 IP만 넣습니다. 와일드카드 SAN은 만들지 않습니다.
 
 자세한 내용: [docs/CERTIFICATES.md](docs/CERTIFICATES.md)
 
-## Shell completion
+## 셸 자동 완성
 
-Bash completion은 문맥을 구분합니다. 첫 positional은 디렉터리를 완성하고, path 인자를 받는 옵션에서만 filesystem completion이 나오며, enum은 유효 값만, `--route`는 `HOST=http://` 템플릿을 제안합니다.
+Bash 자동 완성은 위치에 따라 제안이 달라집니다. 첫 인자에는 디렉터리를 제안하고, 경로를 받는 옵션에만 파일 경로를 제안합니다. enum은 가능한 값만 나오고, `--route`는 `HOST=http://`를 제안합니다.
 
 ```sh
 lserve completions bash > ~/.local/share/bash-completion/completions/lserve
@@ -294,11 +271,11 @@ lserve completions zsh  > /path/to/_lserve
 lserve completions fish > ~/.config/fish/completions/lserve.fish
 ```
 
-## 보안/운영 경계
+## 보안 모델
 
-`lserve`는 **local/private infrastructure**입니다. 자체 authentication/authorization, 사용자 계정, Google SSO, DB, load balancing, 원격 upstream, ACME, public wildcard bind를 구현하지 않습니다.
+`lserve`는 **로컬·사설망용**입니다. 인증과 인가, 사용자 계정, Google SSO, DB, 로드 밸런싱, 원격 upstream, ACME, 공인 wildcard bind는 하지 않습니다. 리버스 프록시도 같은 머신의 loopback HTTP만 대상입니다.
 
-일시적인 외부 접근은 Cloudflare Tunnel/Access Proxy를 앞에 두고, 규모가 커지면 nginx/Caddy/Envoy/Traefik 같은 production stack으로 옮기는 것을 전제로 합니다. HTTP method/status, Host, forwarding header, Range, WebSocket, PEM 인증서 같은 표준 개념을 유지하는 이유도 마이그레이션 충돌을 줄이기 위해서입니다.
+잠깐 밖에서 보려면 Cloudflare Tunnel이나 Access Proxy를 앞에 둡니다. 규모가 커지면 nginx, Caddy, Envoy, Traefik으로 옮깁니다. 나중에 그 서버로 옮길 때 그대로 가져가도록 HTTP 메서드와 상태 코드, Host, forwarding header, Range, WebSocket, PEM은 표준 그대로 둡니다.
 
 자세한 내용: [docs/SECURITY.md](docs/SECURITY.md)
 
@@ -306,15 +283,38 @@ lserve completions fish > ~/.config/fish/completions/lserve.fish
 
 - [설정](docs/CONFIGURATION.md)
 - [보안 모델](docs/SECURITY.md)
-- [Reverse proxy](docs/PROXY.md)
+- [리버스 프록시](docs/PROXY.md)
 - [Markdown](docs/MARKDOWN.md)
 - [인증서](docs/CERTIFICATES.md)
-- [Logging](docs/LOGGING.md)
+- [로그](docs/LOGGING.md)
 - [변경 이력](CHANGELOG.md)
 
-## 빌드 검증 안내
+## 소스에서 빌드
 
-v1.0.0 재구성 코드는 현재 Hyper/rustls/rcgen/Comrak/syntect API 기준으로 작성했습니다. release 전에 Rust toolchain이 있는 환경에서 반드시:
+소스 빌드에는 Rust **1.88+**가 필요합니다.
+
+Termux:
+
+```sh
+pkg install rust
+```
+
+Ubuntu:
+
+```sh
+sudo apt install cargo rustc
+```
+
+RHEL 계열은 배포판 Rust 패키지나 rustup을 쓸 수 있습니다. `rustc --version`으로 확인합니다.
+
+```sh
+git clone https://github.com/flymylee/lserve.git
+cd lserve
+cargo build --release
+install -Dm755 target/release/lserve ~/.local/bin/lserve
+```
+
+릴리스 빌드 전에는 다음을 실행합니다.
 
 ```sh
 cargo fmt --check
@@ -323,10 +323,10 @@ cargo test
 cargo build --release
 ```
 
-를 실행하고 application build 재현성을 위해 생성된 `Cargo.lock`도 commit하는 것을 권장합니다.
+빌드를 같게 맞추려면 생성된 `Cargo.lock`도 커밋합니다.
 
-## License
+## 라이선스
 
 MIT License. Copyright (c) 2026 Mooyeon LEE.
 
-third-party 고지는 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)와 [NOTICE](NOTICE)를 참고하세요.
+서드파티 고지는 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)와 [NOTICE](NOTICE)를 참고하세요.
