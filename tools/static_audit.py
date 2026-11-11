@@ -26,8 +26,8 @@ with cargo_path.open("rb") as f:
 package = cargo.get("package", {})
 if package.get("name") != "lserve":
     fail("Cargo package name is not lserve")
-if package.get("version") != "1.0.1":
-    fail("Cargo package version is not 1.0.1")
+if package.get("version") != "1.0.2":
+    fail("Cargo package version is not 1.0.2")
 if package.get("rust-version") != "1.88":
     fail("Cargo rust-version is not 1.88")
 
@@ -157,7 +157,7 @@ for path in ROOT.rglob("*"):
         if "FIXME" in text or "TODO" in text:
             fail(f"TODO/FIXME remains in {rel}")
 
-# Targeted regressions found during the v1.0.0/v1.0.1 reconstruction.
+# Targeted regressions found during the v1.0.0-v1.0.2 reconstruction.
 if config_source.count("let file_cfg = read_project_config(&root)?;") != 1:
     fail("document-root config should be read exactly once in resolve_serve")
 if "pub const DEFAULT_HTTP_PORT: u16 = 8080;" not in config_source or "pub const DEFAULT_HTTPS_PORT: u16 = 8443;" not in config_source:
