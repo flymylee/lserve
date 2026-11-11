@@ -1,3 +1,4 @@
+use crate::bind::BindSpec;
 use anyhow::{Context, Result, anyhow, bail};
 use std::{
     collections::BTreeMap,
@@ -50,7 +51,7 @@ impl MarkdownTheme {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub root: PathBuf,
-    pub bind: IpAddr,
+    pub binds: Vec<IpAddr>,
     pub http_port: u16,
     pub https_port: u16,
     pub http_only: bool,
@@ -113,7 +114,7 @@ pub enum Shell {
 
 #[derive(Debug, Default)]
 struct RawConfig {
-    bind: Option<IpAddr>,
+    binds: Vec<BindSpec>,
     http_port: Option<u16>,
     https_port: Option<u16>,
     http_only: Option<bool>,
@@ -183,10 +184,10 @@ fn parse_serve_args(args: &[String]) -> Result<ServeCli> {
                 cli.root = Some(PathBuf::from(&args[i]));
             }
             "--bind" => {
-                cli.raw.bind = Some(
+                cli.raw.binds.push(
                     next_value(args, &mut i, "--bind")?
                         .parse()
-                        .context("invalid --bind address")?,
+                        .context("invalid --bind selector")?,
                 );
             }
             "--http-port" => {
@@ -251,12 +252,8 @@ fn resolve_serve(cli: ServeCli) -> Result<Config> {
 
     let file_cfg = read_project_config(&root)?;
 
-    let bind = cli
-        .raw
-        .bind
-        .or(file_cfg.bind)
-        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    validate_bind(bind)?;
+    let bind_specs = select_bind_specs(&cli.raw.binds, &file_cfg.binds);
+    let binds = crate::bind::resolve_binds(&bind_specs)?;
 
     // Privileged ports (80/443) are selected automatically when the process
     // has sufficient privilege (root or CAP_NET_BIND_SERVICE on Linux, and
@@ -347,7 +344,7 @@ fn resolve_serve(cli: ServeCli) -> Result<Config> {
 
     Ok(Config {
         root,
-        bind,
+        binds,
         http_port,
         https_port,
         http_only,
@@ -393,8 +390,8 @@ fn read_project_config(root: &Path) -> Result<RawConfig> {
         }
         match key {
             "bind" => {
-                cfg.bind = Some(value.parse().with_context(|| {
-                    format!("{}:{}: invalid bind address", path.display(), idx + 1)
+                cfg.binds.push(value.parse().with_context(|| {
+                    format!("{}:{}: invalid bind selector", path.display(), idx + 1)
                 })?)
             }
             "http-port" => cfg.http_port = Some(parse_port(value)?),
@@ -546,6 +543,16 @@ fn normalize_route_host(host: &str) -> Result<String> {
     Ok(host)
 }
 
+fn select_bind_specs(cli: &[BindSpec], file: &[BindSpec]) -> Vec<BindSpec> {
+    if !cli.is_empty() {
+        cli.to_vec()
+    } else if !file.is_empty() {
+        file.to_vec()
+    } else {
+        vec![BindSpec::Address(IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    }
+}
+
 pub fn validate_bind(ip: IpAddr) -> Result<()> {
     let allowed = match ip {
         IpAddr::V4(ip) => is_allowed_v4(ip),
@@ -639,12 +646,16 @@ pub const EXAMPLE_CONFIG: &str = r#"# lserve configuration
 # CLI options always override values in this file.
 # This file is read only from the selected document root.
 
-# Bind address.
-# Default: 127.0.0.1
-# Only loopback/private/shared addresses are accepted.
-# Public and wildcard addresses are rejected.
+# Bind address selectors. Repeat bind= for multiple listeners.
+# Default if omitted: 127.0.0.1 only.
+# CIDR selects UP local interface addresses at startup; NO wildcard socket.
+# Entire CIDR must be loopback/private/shared. Public ranges are rejected.
+# A CIDR matching no local address fails startup; restart on IP changes.
+# Repeated CLI --bind options replace the entire .lserve bind list.
 #
 # bind=127.0.0.1
+# bind=::1
+# bind=100.64.0.0/10
 
 # Ports.
 # Default: HTTP 80 / HTTPS 443 when running with root/CAP_NET_BIND_SERVICE
@@ -702,7 +713,7 @@ pub const EXAMPLE_CONFIG: &str = r#"# lserve configuration
 # route.admin.local.example.com=http://localhost:3001
 "#;
 
-pub const HELP: &str = r#"lserve 1.0.1
+pub const HELP: &str = r#"lserve 1.0.2
 A lightweight local/private HTTPS static server, Markdown viewer, and Host/path-based reverse proxy.
 
 USAGE:
@@ -714,7 +725,7 @@ USAGE:
   lserve completions bash|zsh|fish
 
 SERVE OPTIONS:
-  --bind ADDRESS             Bind to loopback/private address only (default 127.0.0.1)
+  --bind IP[/PREFIX]         Repeatable private IP or private CIDR local-address selector
   --http-port PORT           HTTP redirect/origin port (default 80 if privileged, else 8080)
   --https-port PORT          HTTPS port (default 443 if privileged, else 8443)
   -p PORT                    Alias for --https-port
@@ -746,6 +757,44 @@ mod tests {
         assert!(validate_bind("0.0.0.0".parse().unwrap()).is_err());
         assert!(validate_bind("8.8.8.8".parse().unwrap()).is_err());
         assert!(validate_bind("::".parse().unwrap()).is_err());
+    }
+
+    #[test]
+    fn cli_bind_list_overrides_all_file_binds() {
+        let args = vec![
+            "--bind".to_string(), "::1".to_string(),
+            "--bind".to_string(), "100.64.0.0/10".to_string(),
+        ];
+        let cli = parse_serve_args(&args).unwrap();
+        assert_eq!(cli.raw.binds.len(), 2);
+        let file = vec!["127.0.0.1".parse().unwrap()];
+        assert_eq!(select_bind_specs(&cli.raw.binds, &file), cli.raw.binds);
+        assert_eq!(select_bind_specs(&[], &file), file);
+        assert_eq!(
+            select_bind_specs(&[], &[]),
+            vec![BindSpec::Address(IpAddr::V4(Ipv4Addr::LOCALHOST))]
+        );
+    }
+
+    #[test]
+    fn config_file_accepts_repeated_bind_keys() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "lserve-bind-config-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".lserve"),
+            "bind=127.0.0.1\nbind=::1\nbind=100.64.0.0/10\n",
+        )
+        .unwrap();
+        let result = read_project_config(&root);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(result.unwrap().binds.len(), 3);
     }
 
     #[test]

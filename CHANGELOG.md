@@ -4,6 +4,20 @@ All notable changes to `lserve` will be documented here.
 
 The project follows Semantic Versioning (`{major}.{minor}.{patch}`) from v1.0.0 onward.
 
+## [1.0.2] - 2026-11-11
+
+### Added
+
+- Repeated CLI `--bind IP[/PREFIX]` and repeated `.lserve` `bind=IP[/PREFIX]`, with full CLI-list override.
+- Private CIDR selectors expand to UP locally assigned IPv4/IPv6 addresses at startup, then bind individual HTTP/HTTPS sockets.
+- De-duplicate overlapping addresses, pre-bind every listener before serving, and cover all non-loopback bind IPs in project certificate SANs.
+
+### Security and behavior
+
+- Reject public-overlapping CIDRs and wildcard listeners; unchanged loopback-only reverse proxy upstream policy.
+- Fail startup if any CIDR matches no local IP or any listener fails to bind.
+- CIDR matches are startup snapshots: restart after interface/IP changes.
+
 ## [1.0.1] - 2026-11-02
 
 ### Changed

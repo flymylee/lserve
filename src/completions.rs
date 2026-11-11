@@ -171,7 +171,7 @@ const ZSH: &str = r#"#compdef lserve
 _lserve() {
   _arguments -C \
     '1:document root or command:_alternative "commands:(ca cert flush config completions)" "directories:_directories"' \
-    '--bind[bind to loopback/private address]:address:' \
+    '*--bind[repeatable private IP or local private CIDR]:address:' \
     '--http-port[HTTP port]:port:' \
     '(-p)--https-port[HTTPS port]:port:' \
     '(--https-port)-p[HTTPS port]:port:' \
@@ -195,7 +195,7 @@ _lserve "$@"
 
 const FISH: &str = r#"complete -c lserve -f
 complete -c lserve -n '__fish_use_subcommand' -a 'ca cert flush config completions'
-complete -c lserve -l bind -r -d 'Bind to loopback/private address'
+complete -c lserve -l bind -r -d 'Private IP/CIDR (repeatable)'
 complete -c lserve -l http-port -r -d 'HTTP port'
 complete -c lserve -l https-port -s p -r -d 'HTTPS port'
 complete -c lserve -l http-only -d 'Serve HTTP directly'
@@ -221,6 +221,7 @@ mod tests {
     #[test]
     fn bash_completion_tracks_cli_grammar() {
         assert!(BASH.contains("generate export"));
+        assert!(ZSH.contains("*--bind["));
         assert!(BASH.contains("all ca cert"));
         assert!(BASH.contains("HOST=http://"));
         assert!(BASH.contains("auto light dark"));

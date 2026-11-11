@@ -21,7 +21,7 @@ The current directory is used when no path is supplied. The path is canonicalize
 
 | `.lserve` key | CLI equivalent | Default | Meaning |
 | --- | --- | --- | --- |
-| `bind=ADDRESS` | `--bind ADDRESS` | `127.0.0.1` | Loopback/private/shared bind only |
+| `bind=IP[/PREFIX]` (repeatable) | `--bind IP[/PREFIX]` (repeatable) | `127.0.0.1` | Literal private IP or UP local interface addresses in an entirely private CIDR |
 | `http-port=PORT` | `--http-port PORT` | `80` (privileged) / `8080` | Redirect/origin HTTP port |
 | `https-port=PORT` | `--https-port PORT`, `-p PORT` | `443` (privileged) / `8443` | HTTPS port |
 | `http-only=true` | `--http-only` | `false` | Serve HTTP directly instead of redirecting to HTTPS |
@@ -80,3 +80,26 @@ lserve config --write path/to/.lserve
 `--write` refuses to overwrite an existing file.
 
 The repository's [`.lserve.example`](../.lserve.example) is generated from the same source constant used by `lserve config` and should remain byte-for-byte synchronized.
+
+## Multiple binds and CIDRs (v1.0.2)
+
+```ini
+bind=127.0.0.1
+bind=::1
+bind=100.64.0.0/10
+bind=fd7a:115c:a1e0::/48
+```
+
+CIDR means **select local UP interface IPs at startup**, not bind to the whole
+network/wildcard and not grant access to remote clients in that subnet.
+The entire CIDR must fit inside one allowed range: 127/8, RFC1918,
+100.64/10, ::1/128, or IPv6 fc00::/7. Public-overlapping CIDRs are rejected.
+If no interface IP matches any CIDR, startup fails. Overlapping selectors are
+de-duplicated. All selected HTTP and HTTPS sockets must bind successfully before
+the first request is accepted.
+
+Repeating `--bind` replaces the **entire** `.lserve` bind list (not an append).
+Omitting all bind directives defaults to `127.0.0.1`. After interface/IP changes
+restart `lserve`; CIDR matching is not monitored dynamically.
+New private bind IPs require HTTPS project-certificate SAN coverage; if the
+existing project certificate lacks them, use `lserve cert generate --force`.

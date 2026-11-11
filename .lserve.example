@@ -3,12 +3,16 @@
 # CLI options always override values in this file.
 # This file is read only from the selected document root.
 
-# Bind address.
-# Default: 127.0.0.1
-# Only loopback/private/shared addresses are accepted.
-# Public and wildcard addresses are rejected.
+# Bind address selectors. Repeat bind= for multiple listeners.
+# Default if omitted: 127.0.0.1 only.
+# CIDR selects UP local interface addresses at startup; NO wildcard socket.
+# Entire CIDR must be loopback/private/shared. Public ranges are rejected.
+# A CIDR matching no local address fails startup; restart on IP changes.
+# Repeated CLI --bind options replace the entire .lserve bind list.
 #
 # bind=127.0.0.1
+# bind=::1
+# bind=100.64.0.0/10
 
 # Ports.
 # Default: HTTP 80 / HTTPS 443 when running with root/CAP_NET_BIND_SERVICE

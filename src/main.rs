@@ -1,3 +1,4 @@
+mod bind;
 mod certs;
 mod completions;
 mod config;

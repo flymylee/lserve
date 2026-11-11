@@ -472,15 +472,25 @@ fn required_sans(config: &Config, project: bool) -> Vec<String> {
                 .keys()
                 .map(|selector| route_selector_host(selector).to_string()),
         );
-        if !config.bind.is_loopback() {
-            sans.insert(config.bind.to_string());
-        }
+        sans.extend(bind_ip_sans(&config.binds));
     }
     sans.into_iter().collect()
 }
 
+fn is_default_certificate_ip(ip: &IpAddr) -> bool {
+    *ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        || *ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+}
+
+fn bind_ip_sans(binds: &[IpAddr]) -> impl Iterator<Item = String> + '_ {
+    binds
+        .iter()
+        .filter(|ip| !is_default_certificate_ip(ip))
+        .map(ToString::to_string)
+}
+
 fn needs_project_leaf(config: &Config) -> bool {
-    !config.routes.is_empty() || !config.bind.is_loopback()
+    !config.routes.is_empty() || config.binds.iter().any(|ip| !is_default_certificate_ip(ip))
 }
 
 fn missing_sans(cert_path: &Path, required: &[String]) -> Result<Vec<String>> {
@@ -621,5 +631,26 @@ fn remove_if_exists(path: &Path) -> Result<()> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e).with_context(|| format!("failed to remove {}", path.display())),
+    }
+}
+
+#[cfg(test)]
+mod bind_san_tests {
+    use super::*;
+
+    #[test]
+    fn all_private_v4_v6_bind_ips_are_covered() {
+        let binds = vec![
+            "127.0.0.1".parse().unwrap(),
+            "::1".parse().unwrap(),
+            "127.0.0.2".parse().unwrap(),
+            "100.95.2.3".parse().unwrap(),
+            "fd7a:115c:a1e0::9".parse().unwrap(),
+        ];
+        let sans: BTreeSet<_> = bind_ip_sans(&binds).collect();
+        assert_eq!(sans.len(), 3);
+        assert!(sans.contains("127.0.0.2"));
+        assert!(sans.contains("100.95.2.3"));
+        assert!(sans.contains("fd7a:115c:a1e0::9"));
     }
 }

@@ -159,17 +159,37 @@ A custom upstream hostname is allowed only when the address selected for the act
 
 See [docs/PROXY.md](docs/PROXY.md).
 
-## Private-network bind
+## Private-network bind: multiple IPs and CIDRs
 
-The default remains localhost. For a deliberate private-network use case:
+The default remains `127.0.0.1` only. Explicitly use multiple `--bind` flags:
 
 ```sh
-lserve --bind 100.100.10.20
+lserve --bind 127.0.0.1 --bind ::1 --bind 100.64.0.0/10
 ```
 
-Allowed ranges include loopback, RFC1918 IPv4, `100.64.0.0/10` (including Tailscale IPv4), IPv6 loopback, and IPv6 ULA. Public IPs, `0.0.0.0`, and `::` are rejected.
+Or repeat keys in the project `.lserve` file:
 
-If you need experimental access from outside the private boundary, keep `lserve` private and place a tunnel/access proxy in front of it.
+```ini
+bind=127.0.0.1
+bind=::1
+bind=100.64.0.0/10
+bind=fd7a:115c:a1e0::/48
+```
+
+A CIDR selects the currently assigned **UP local interface IPs** in that subnet
+at startup and binds each one separately; it is **not** a wildcard listener or
+remote client allowlist. The entire CIDR must be inside an allowed loopback,
+RFC1918, 100.64/10, or IPv6 ULA range. Public addresses and wildcard
+`0.0.0.0` / `::` remain prohibited. Missing CIDR matches or any socket bind
+failure aborts startup. Duplicate IPs are removed.
+
+Repeated CLI flags replace the entire bind list from `.lserve`. Restart
+after address changes; CIDR expansion is a startup snapshot, not a network
+watcher. For HTTPS project certificates, new addresses may require
+`lserve cert generate --force`.
+
+If you need access from outside the private boundary, use a tunnel/access proxy
+in front of the privately bound server.
 
 ## Cloudflare Tunnel / HTTP-only origin
 
