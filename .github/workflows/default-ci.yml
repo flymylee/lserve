@@ -1,0 +1,31 @@
+name: Verify default lserve build
+
+on:
+  push:
+    branches:
+      - main
+      - dev/v1.0.2-multi-bind-cidr
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  default:
+    name: Default Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Static audit
+        run: python3 tools/static_audit.py
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Compile (locked dependencies)
+        run: cargo check --locked
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Unit tests
+        run: cargo test --locked
