@@ -160,17 +160,38 @@ upstream 호스트 이름은 직접 정해도 됩니다. 다만 **실제로 접�
 
 자세한 내용: [docs/PROXY.md](docs/PROXY.md)
 
-## 사설망 bind
+## 사설망 bind: 여러 IP와 CIDR
 
-기본 주소는 localhost입니다. 사설망 주소가 필요할 때만 이렇게 지정합니다.
+기본 바인드는 `127.0.0.1` 하나입니다. 여러 주소를 지정할 수 있습니다.
 
 ```sh
-lserve --bind 100.100.10.20
+lserve --bind 127.0.0.1 --bind ::1 --bind 100.64.0.0/10
 ```
 
-쓸 수 있는 주소는 loopback, RFC1918 IPv4, `100.64.0.0/10`(Tailscale IPv4 포함), IPv6 loopback, IPv6 ULA입니다. 공인 IP, `0.0.0.0`, `::`는 거부합니다.
+설정 파일 `.lserve`에서는 같은 키를 여러 줄 반복합니다.
 
-사설망 밖에서 잠깐 열어 보려면 공인 주소에 직접 붙이지 말고, 앞에 Cloudflare Tunnel이나 Access Proxy를 둡니다.
+```ini
+bind=127.0.0.1
+bind=::1
+bind=100.64.0.0/10
+bind=fd7a:115c:a1e0::/48
+```
+
+CIDR은 네트워크 전체에 와일드카드 바인드하는 기능이 아닙니다. 시작할 때
+**실제 로컬 인터페이스에 할당되어 있고 UP 상태인 주소**를 선택한 뒤
+각 IP에 개별적으로 바인드합니다. CIDR 전체가 허용된 loopback/RFC1918/
+100.64.0.0/10/IPv6 ULA 범위에 들어가야 합니다. 공인 IP나
+`0.0.0.0`, `::`는 계속 거부합니다. CIDR에 해당하는 로컬 주소가
+없거나 바인드 중 하나라도 실패하면 서버 시작을 중단합니다.
+중복 주소는 자동으로 제거합니다.
+
+CLI의 `--bind`를 하나라도 지정하면 설정 파일의 bind 목록 전체를
+대체합니다. IP가 바뀌면 재시작해야 하며 자동 감시는 하지 않습니다.
+HTTPS 프로젝트 인증서에 새 바인드 주소가 없다면
+`lserve cert generate --force`로 다시 생성해야 합니다.
+
+사설망 밖에서 접속해야 한다면 직접 공인 IP에 바인드하지 말고
+Cloudflare Tunnel이나 Access Proxy 등을 앞에 두세요.
 
 ## Cloudflare Tunnel / HTTP-only
 
