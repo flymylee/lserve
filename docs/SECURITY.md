@@ -20,6 +20,16 @@ Explicit binds are restricted to:
 
 Wildcard and public addresses are rejected. In particular, `0.0.0.0` and `::` are not supported.
 
+In v1.0.2, repeatable binds allow multiple IPv4/IPv6 addresses and private
+CIDR **selectors**. Every address represented by a CIDR must fall within one
+approved private/loopback/shared subnet; CIDRs covering any public space are
+rejected. Matching is against UP local interface IPs at startup, followed by
+individual socket binds; wildcard sockets are never used. Duplicate matches
+are removed. A CIDR with no match, or failure to bind any selected address,
+causes a fatal startup error. CIDR bind is *not* a remote-client allowlist.
+Network/IP changes after startup require restart.
+
+
 For temporary external access, keep `lserve` private and put a tunnel/access proxy in front of it. Authentication, SSO, ACLs, sessions, rate limiting, and public edge hardening belong in that layer.
 
 ## Static filesystem
