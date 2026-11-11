@@ -52,51 +52,59 @@ pub async fn run(config: Config) -> Result<()> {
         proxy,
     };
 
+    let mut tasks = tokio::task::JoinSet::new();
     if config.http_only {
-        let address = SocketAddr::new(config.bind, config.http_port);
-        logger.access(format!("server http listening on http://{address}"));
-        tokio::select! {
-            result = serve_http(address, app, false) => result,
-            result = tokio::signal::ctrl_c() => {
-                result.context("failed to listen for shutdown signal")?;
-                logger.access("server shutdown requested");
-                Ok(())
-            }
+        // Acquire ALL sockets before serving; a partial bind is a startup error.
+        let listeners = bind_all(&config.binds, config.http_port).await?;
+        for (address, listener) in listeners {
+            logger.access(format!("server http listening on http://{address}"));
+            tasks.spawn(serve_http(listener, app.clone(), false));
         }
     } else {
         let cert_paths = certs::ensure_for_serve(&config)?;
         let tls = load_tls_config(&cert_paths.cert, &cert_paths.key)?;
-        let http_address = SocketAddr::new(config.bind, config.http_port);
-        let https_address = SocketAddr::new(config.bind, config.https_port);
-
-        logger.access(format!(
-            "server http redirect listening on http://{http_address}"
-        ));
-        logger.access(format!("server https listening on https://{https_address}"));
-
-        let redirect_logger = logger.clone();
-        let redirect_https_port = config.https_port;
-        let redirect_task = tokio::spawn(async move {
-            serve_redirect(http_address, redirect_https_port, redirect_logger).await
-        });
-        let https_task = tokio::spawn(serve_https(https_address, app, tls));
-
-        tokio::select! {
-            result = redirect_task => result.context("HTTP redirect listener task failed")?,
-            result = https_task => result.context("HTTPS listener task failed")?,
-            result = tokio::signal::ctrl_c() => {
-                result.context("failed to listen for shutdown signal")?;
-                logger.access("server shutdown requested");
-                Ok(())
-            }
+        let redirects = bind_all(&config.binds, config.http_port).await?;
+        let https = bind_all(&config.binds, config.https_port).await?;
+        for (address, listener) in redirects {
+            logger.access(format!("server http redirect listening on http://{address}"));
+            tasks.spawn(serve_redirect(listener, config.https_port, logger.clone()));
+        }
+        for (address, listener) in https {
+            logger.access(format!("server https listening on https://{address}"));
+            tasks.spawn(serve_https(listener, app.clone(), Arc::clone(&tls)));
         }
     }
+
+    let result = tokio::select! {
+        done = tasks.join_next() => match done {
+            Some(Ok(Ok(()))) => anyhow::bail!("listener stopped unexpectedly"),
+            Some(Ok(Err(error))) => Err(error),
+            Some(Err(error)) => Err(error).context("listener task failed"),
+            None => anyhow::bail!("no listeners running"),
+        },
+        shutdown = tokio::signal::ctrl_c() => {
+            shutdown.context("failed to listen for shutdown signal")?;
+            logger.access("server shutdown requested");
+            Ok(())
+        }
+    };
+    tasks.abort_all();
+    result
 }
 
-async fn serve_http(address: SocketAddr, app: App, tls: bool) -> Result<()> {
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("failed to bind {address}"))?;
+async fn bind_all(ips: &[IpAddr], port: u16) -> Result<Vec<(SocketAddr, TcpListener)>> {
+    let mut listeners = Vec::with_capacity(ips.len());
+    for ip in ips {
+        let address = SocketAddr::new(*ip, port);
+        let listener = TcpListener::bind(address)
+            .await
+            .with_context(|| format!("failed to bind {address}"))?;
+        listeners.push((address, listener));
+    }
+    Ok(listeners)
+}
+
+async fn serve_http(listener: TcpListener, app: App, tls: bool) -> Result<()> {
     loop {
         let (stream, peer) = listener.accept().await.context("HTTP accept failed")?;
         let app = app.clone();
@@ -127,13 +135,10 @@ async fn serve_http_connection(
 }
 
 async fn serve_https(
-    address: SocketAddr,
+    listener: TcpListener,
     app: App,
     tls_config: Arc<RustlsServerConfig>,
 ) -> Result<()> {
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("failed to bind {address}"))?;
     let acceptor = TlsAcceptor::from(tls_config);
 
     loop {
@@ -252,10 +257,7 @@ async fn handle_request(
     response
 }
 
-async fn serve_redirect(address: SocketAddr, https_port: u16, logger: Logger) -> Result<()> {
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("failed to bind HTTP redirect listener {address}"))?;
+async fn serve_redirect(listener: TcpListener, https_port: u16, logger: Logger) -> Result<()> {
     loop {
         let (stream, peer) = listener.accept().await.context("redirect accept failed")?;
         let logger = logger.clone();
