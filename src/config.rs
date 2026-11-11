@@ -777,6 +777,27 @@ mod tests {
     }
 
     #[test]
+    fn config_file_accepts_repeated_bind_keys() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "lserve-bind-config-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".lserve"),
+            "bind=127.0.0.1\nbind=::1\nbind=100.64.0.0/10\n",
+        )
+        .unwrap();
+        let result = read_project_config(&root);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(result.unwrap().binds.len(), 3);
+    }
+
+    #[test]
     fn sizes_are_binary() {
         assert_eq!(parse_size("1M").unwrap(), 1_048_576);
         assert_eq!(parse_size("4KiB").unwrap(), 4096);
