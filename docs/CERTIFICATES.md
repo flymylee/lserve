@@ -51,7 +51,7 @@ When routes or a non-loopback private bind require project-specific names/addres
 ./.certs/server-key.pem
 ```
 
-The project leaf is signed by the same global Root CA. Its required SANs include the baseline localhost entries plus exact route hostnames and the explicit private bind IP when applicable.
+The project leaf is signed by the same global Root CA. Its required SANs include the baseline localhost entries plus exact route hostnames and **all selected non-loopback IPv4/IPv6 bind IPs**, including IPs expanded from CIDR selectors at startup. SAN membership does not imply a corresponding listener exists. If a new bind address is not covered by an existing project leaf, regenerate with `lserve cert generate --force`.
 
 Wildcard SANs are not generated automatically.
 
