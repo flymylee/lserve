@@ -375,6 +375,14 @@ fn load_tls_config(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn bind_all_rejects_an_already_bound_port() {
+        let occupied = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        let ips = ["127.0.0.1".parse().unwrap()];
+        assert!(bind_all(&ips, port).await.is_err());
+    }
+
     #[test]
     fn ipv6_hosts_are_bracketed_for_redirects() {
         assert_eq!(format_host_for_url("::1"), "[::1]");
